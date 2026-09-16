@@ -13,10 +13,10 @@ from rPPG.capture.capture_video import capture_video
 from rPPG.reports.report import print_report
 
 
-def _capture_and_analyze(camera, duration):
+def _capture_and_analyze(camera, duration, reference_hr=None):
     """Run the complete capture followed by analysis workflow."""
     video_path = capture_video(camera, duration)
-    result = analyze_video(video_path)
+    result = analyze_video(video_path, reference_hr=reference_hr)
     print_report(result)
     return result
 
@@ -63,6 +63,11 @@ def main(argv=None):
     parser.add_argument("--duration", type=float, default=30.0, help="Duração da captura em segundos")
     parser.add_argument("--camera", type=int, default=0, help="Índice da câmera")
     parser.add_argument("--capture-only", action="store_true", help="Salva o vídeo sem analisá-lo")
+    parser.add_argument(
+        "--reference-hr",
+        type=float,
+        help="HR externo opcional (bpm), usado somente para validação do relatório",
+    )
     args = parser.parse_args(argv)
 
     if argv is None and len(sys.argv) == 1:
@@ -73,10 +78,10 @@ def main(argv=None):
         print(video_path)
         return video_path
     if args.video:
-        result = analyze_video(args.video)
+        result = analyze_video(args.video, reference_hr=args.reference_hr)
         print_report(result)
         return result
-    return _capture_and_analyze(args.camera, args.duration)
+    return _capture_and_analyze(args.camera, args.duration, reference_hr=args.reference_hr)
 
 
 if __name__ == "__main__":

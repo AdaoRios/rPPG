@@ -9,17 +9,18 @@ sinal.
 
 ## Como funciona
 
-1. **Detecção facial** — MediaPipe Face Landmarker localiza os pontos do rosto em cada frame (bochechas e testa)
-2. **Extração das ROIs** — três regiões de interesse são recortadas e a média espacial de R, G, B é calculada dentro de cada uma.
+1. **Detecção facial** — MediaPipe Face Landmarker localiza os pontos do rosto em cada frame.
+2. **Extração das ROIs** — testa, bochecha esquerda, bochecha direita e glabela são recortadas; a média espacial de R, G, B é calculada dentro de cada uma.
 3. **Pré-processamento** — suavização para remover ruído de câmera/movimento.
-4. **Extração do sinal rPPG** — três algoritmos rodam em paralelo sobre cada ROI:
+4. **Extração do sinal rPPG** — quatro algoritmos rodam em paralelo sobre cada ROI:
    - **CHROM** (De Haan & Jeanne, 2013)
    - **POS** (Wang et al., 2017) 
    - **GREEN** (Verkruysse et al., 2008)
-5. **Combinação** — os três sinais são padronizados (z-score), alinhados e combinados por pesos configuráveis, primeiro entre algoritmos e depois entre as ROIs.
-6. **Filtragem final** — os sinais passam por um filtro Butterworth passa-banda que restringe o sinal combinado à faixa fisiológica de frequência cardíaca (42–240 bpm).
+   - **ICA** (Poh, McDuff & Picard, 2010)
+5. **Combinação** — os sinais são padronizados (z-score), têm a polaridade alinhada e são combinados por pesos configuráveis: primeiro entre algoritmos dentro de cada ROI, depois entre ROIs. A combinação é feita em sinais, nunca em médias de HR.
+6. **Filtragem final** — um único filtro Butterworth passa-banda restringe o sinal combinado à faixa fisiológica de frequência cardíaca (42–240 bpm). Esse mesmo sinal filtrado alimenta HR, HRV e as métricas finais.
 7. **Biomarcadores** — a frequência cardíaca (pico espectral via FFT), HRV (SDNN, RMSSD, pNN50 a partir dos intervalos entre picos) e métricas de qualidade do sinal (SNR, concentração espectral, amplitude, energia) são calculados.
-8. **Relatório** — resultado final dos biomarcadores impresso no console, contendo benchmarks comparando as métricas do CHROM/POS/GREEN, e opcionalmente, gráficos de comparação entre eles.
+8. **Relatório** — resultado final, benchmarks e auditoria concisa de proveniência são impressos no console. Os benchmarks são observacionais e não escolhem o sinal final.
 
 ---
 
@@ -83,6 +84,12 @@ gravação. Ao fim da duração, ou com **Q**, o MP4 é finalizado e pode seguir
 O overlay mantém valores de depuração de movimento e de enquadramento (tamanho,
 centro e bounding box) para a calibração experimental.
 
+Durante o **PREVIEW**, o overlay já mostra os estados de qualidade em tempo
+real: verde indica condição OK, amarelo indica aviso ou ajuste recomendado e
+vermelho indica problema, como rosto não detectado. A iluminação aparece em
+amarelo enquanto seus limites finais ainda não estão calibrados. A mesma
+legenda permanece visível durante a gravação.
+
 ### Menu interativo
 
 Ao rodar `python main.py`, um menu é exibido:
@@ -107,6 +114,16 @@ Ao rodar `python main.py`, um menu é exibido:
 
 Vídeos capturados são salvos em `data/captures/`, com o nome `video_<data>_<hora>.mp4` (a pasta é criada automaticamente na primeira captura).
 
+### Calibração experimental
+
+O módulo independente reutiliza o pipeline normal e não altera algoritmos, ROIs ou pesos:
+
+```bash
+python -m rPPG.calibration --captures 10 --duration 20 --output-dir calibration
+```
+
+Após cada captura, informe a FC exibida no Apple Watch, ou pressione ENTER para ausente. `reference_hr_bpm` é uma referência externa observacional, não ground truth clínico: nunca influencia resultado, algoritmo ou pesos. A saída contém JSON por captura, `results.csv`, `summary.csv`, espectros CSV e `report.html`; registra FC final, ROI × algoritmo, erros quando há referência, métricas de sinal/iluminação e audit. O limiar `0.784` é somente de pixel brilhante, não um quality gate.
+
 ---
 
 ## Configuração
@@ -120,12 +137,13 @@ DEBUG_COMPARE_ALGORITHMS = True   # liga/desliga os gráficos de diagnóstico
 HR_LOW_HZ = 0.7    # 42 bpm — limite inferior aceito para a FC
 HR_HIGH_HZ = 4.0   # 240 bpm — limite superior aceito para a FC
 
-METHOD_WEIGHTS = {"chrom": 0.4, "pos": 0.4, "green": 0.2}
+METHOD_WEIGHTS = {"chrom": 0.3, "pos": 0.3, "ica": 0.3, "green": 0.1}
 
 ROI_WEIGHTS = {
-    "testa": 0.4,
-    "bochecha_esquerda": 0.3,
-    "bochecha_direita": 0.3,
+    "testa": 0.36,
+    "bochecha_esquerda": 0.27,
+    "bochecha_direita": 0.27,
+    "glabela": 0.10,
 }
 
 ROI_POINTS = { ... }  # índices dos landmarks do MediaPipe para cada ROI
@@ -140,6 +158,9 @@ FACE_MIN_HEIGHT_RATIO = 0.35
 FACE_MAX_HEIGHT_RATIO = 0.85
 FACE_MAX_CENTER_OFFSET_X = 0.15
 FACE_MAX_CENTER_OFFSET_Y = 0.18
+
+# Iluminação: RGB normalizado [0, 1]; métrica observacional de clipping
+LIGHTING_BRIGHT_PIXEL_CHANNEL = 0.784
 ```
 
 `MOVEMENT_THRESHOLD` é o maior valor aceito para a métrica de movimento;
@@ -151,6 +172,12 @@ bounding box divididas pelas dimensões do frame. `FACE_MAX_CENTER_OFFSET_X/Y`
 limitam o desvio absoluto do centro da face em relação a 50% do frame, também
 normalizado por largura/altura. Todos os valores são iniciais e devem ser
 calibrados observando a webcam.
+
+Os pesos de algoritmos somam 1. Os pesos legados das três ROIs preservam a
+proporção 4:3:3, escalada para 90% do total; os 10% restantes são a contribuição
+experimental explícita da glabela. O combinador valida pesos finitos e não
+negativos e normaliza apenas os componentes explicitamente marcados como válidos.
+O detalhamento de rastreabilidade está em [docs/signal-pipeline.md](docs/signal-pipeline.md).
 
 ---
 
@@ -245,9 +272,14 @@ Para validar manualmente:
 ### Limitações atuais
 
 Os thresholds de tamanho e centralização são valores iniciais, não limites
-fisiológicos, e precisam de calibração experimental por webcam. Capture Quality
-considera apenas movimento e enquadramento. Iluminação, exposição, blur, pose,
-oclusão, segmentação e qualidade do sinal ainda não fazem parte do sistema.
+fisiológicos, e precisam de calibração experimental por webcam. A análise mede
+iluminação na bounding box facial: `bright_pixel_ratio` é a proporção de pixels
+em que `max(R,G,B) >= 0.784`, após normalização para [0, 1]. O valor 0,784 é o
+threshold experimental/recomendado adotado nesta versão; não há referência
+bibliográfica para ele no repositório. A métrica é registrada no audit, mas não
+rejeita frames porque uma regra de exclusão calibrada ainda não foi definida.
+Movimento, pose, oclusão, blur e qualidade clínica do sinal continuam exigindo
+validação experimental.
 
 ---
 
@@ -260,8 +292,21 @@ oclusão, segmentação e qualidade do sinal ainda não fazem parte do sistema.
 - `respiratory_rate` — não implementado
 - `signal_metrics` — `snr`, `spectral_concentration`, `fft_peak`, `amplitude`, `std`, `energy`
 - `fps`, `duration`, `valid_frames` — informações sobre a captura
+- `audit` — proveniência de frames, iluminação, ROIs, algoritmos, pesos efetivos, alinhamento e sinal final
 
-O relatório é impresso automaticamente via `print_report()` ao rodar `main.py`. Quando `DEBUG_COMPARE_ALGORITHMS = True` (ou `debug=True` em `combine_roi_and_methods`), também são impressos benchmarks comparando CHROM, POS e GREEN por ROI e por algoritmo, além de um gráfico com o sinal no tempo, o espectro de frequência e a correlação/defasagem entre os três métodos.
+O relatório é impresso automaticamente via `print_report()` ao rodar `main.py`.
+O audit também mostra toda exclusão e seu motivo; nenhum benchmark, `max()` ou
+"Highest ..." altera o sinal final. Quando `DEBUG_COMPARE_ALGORITHMS = True`
+(ou `debug=True` em `combine_roi_and_methods`), são mostrados gráficos de
+diagnóstico para CHROM, POS, GREEN e ICA.
+
+### Testes
+
+Execute a partir do diretório pai de `rPPG/`:
+
+```bash
+python -m unittest rPPG.test_lighting_quality rPPG.test_quality_check rPPG.test_signal_pipeline rPPG.test_heart_rate rPPG.test_live_capture_quality
+```
 
 
 ## Referências

@@ -15,6 +15,12 @@ env/
 data/benchmark/
 data/captures/
 data/results/
+/calibration/data/
+/calibration/spectra/
+/calibration/results.csv
+/calibration/summary.csv
+/calibration/report.html
+/calibration/*.png
 
 # Logs
 *.log

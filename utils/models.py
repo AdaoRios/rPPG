@@ -18,6 +18,10 @@ class AnalysisResult:
     fps: float
     duration: float
     valid_frames: int
+    audit: dict[str, Any] | None = None
+    # Optional raw FFT output for experimental consumers; production reports
+    # continue to use the compact audit diagnostics.
+    spectral_data: dict[str, Any] | None = None
 
 
 __all__ = ["AnalysisResult", "_process_video", "detrend"]

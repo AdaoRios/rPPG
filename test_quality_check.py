@@ -4,8 +4,8 @@ import unittest
 
 import numpy as np
 
-from capture.quality_check import FaceFramingQualityChecker, MovementQualityChecker
-from config import (
+from rPPG.capture.quality_check import FaceFramingQualityChecker, MovementQualityChecker
+from rPPG.config import (
     FACE_MAX_CENTER_OFFSET_X,
     FACE_MAX_CENTER_OFFSET_Y,
     FACE_MAX_HEIGHT_RATIO,

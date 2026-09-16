@@ -28,8 +28,10 @@ from rPPG.config import (
     MOVEMENT_THRESHOLD,
     MOVEMENT_WINDOW_SIZE,
     READY_STABLE_FRAMES,
+    ROI_POINTS,
 )
 from rPPG.roi.face_detection import FaceDetector
+from rPPG.roi.roi_extraction import extract_roi_means
 
 
 class CaptureState(Enum):
@@ -39,11 +41,23 @@ class CaptureState(Enum):
     CAPTURING = auto()
 
 
-def _draw_lines(frame, lines, color=(0, 255, 0)):
-    """Draw a compact OpenCV overlay using ASCII-safe status text."""
+COLORS = {
+    "ok": (0, 255, 0),
+    "warning": (0, 165, 255),
+    "error": (0, 0, 255),
+    "info": (255, 255, 255),
+}
+
+
+def _draw_lines(frame, lines, color=COLORS["info"]):
+    """Draw an OpenCV overlay; entries may provide their own BGR color."""
     for index, line in enumerate(lines):
-        cv2.putText(frame, line, (20, 35 + index * 26),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.60, color, 2)
+        if isinstance(line, tuple):
+            text, line_color = line
+        else:
+            text, line_color = line, color
+        cv2.putText(frame, text, (20, 35 + index * 26),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.60, line_color, 2)
 
 
 def _draw_face_bbox(frame, bbox, color):
@@ -59,6 +73,95 @@ def _format_ratio(value):
 
 def _format_metric(value):
     return "--" if value is None else f"{value:.3f}"
+
+
+def assess_live_roi_status(rgb_frame, landmarks):
+    """Validate the configured ROI masks for preview feedback only.
+
+    This is the same mask validation used by offline analysis. It does not
+    accept/reject a capture frame and deliberately returns concise counts rather
+    than ROI pixels or RGB arrays.
+    """
+    total = len(ROI_POINTS)
+    if landmarks is None:
+        return {"valid_count": 0, "total": total, "invalid_rois": tuple(ROI_POINTS)}
+    means, invalid_rois = extract_roi_means(
+        rgb_frame, landmarks, ROI_POINTS, return_diagnostics=True
+    )
+    return {
+        "valid_count": len(means),
+        "total": total,
+        "invalid_rois": tuple(invalid_rois),
+    }
+
+
+def _quality_status_lines(movement, framing, lighting, roi_status):
+    """Build short, colored instructions shared by preview and recording."""
+    if framing.face_detected:
+        face_line = ("FACE: OK - landmarks validos", COLORS["ok"])
+    else:
+        face_line = ("FACE: ERRO - nao detectada", COLORS["error"])
+
+    if roi_status["valid_count"] == roi_status["total"]:
+        roi_line = (f"ROIs: {roi_status['valid_count']}/{roi_status['total']} OK", COLORS["ok"])
+    elif roi_status["valid_count"] == 0:
+        roi_line = (f"ROIs: 0/{roi_status['total']} indisponiveis", COLORS["error"])
+    else:
+        invalid_names = ", ".join(name.upper() for name in roi_status["invalid_rois"])
+        roi_line = (
+            f"ROIs: {roi_status['valid_count']}/{roi_status['total']} - {invalid_names}",
+            COLORS["warning"],
+        )
+
+    if not framing.face_detected:
+        framing_line = ("Enquadramento: ERRO - rosto nao detectado", COLORS["error"])
+    elif framing.framing_ok:
+        framing_line = ("Enquadramento: OK - rosto enquadrado", COLORS["ok"])
+    else:
+        framing_line = (
+            f"Enquadramento: AVISO - {framing.message.lower()}",
+            COLORS["warning"],
+        )
+
+    if movement.movement_metric is None:
+        movement_line = ("Movimento: AVISO - aguardando estabilidade", COLORS["warning"])
+    elif movement.is_stable:
+        movement_line = ("Movimento: OK - mantenha esta posicao", COLORS["ok"])
+    else:
+        movement_line = ("Movimento: AVISO - fique imovel", COLORS["warning"])
+
+    if lighting.status == "METRICS_AVAILABLE":
+        lighting_line = (
+            "ILUMINACAO: MEDICAO ATIVA - sem quality gate calibrado",
+            COLORS["warning"],
+        )
+    else:
+        lighting_line = ("Iluminacao: ERRO - regiao facial indisponivel", COLORS["error"])
+
+    return [
+        ("STATUS DA CAPTURA", COLORS["info"]),
+        face_line,
+        roi_line,
+        framing_line,
+        movement_line,
+        lighting_line,
+        ("QUALIDADE: face/ROIs monitoradas; luz observacional", COLORS["info"]),
+        ("Legenda: verde = OK | amarelo = aviso | vermelho = problema", COLORS["info"]),
+    ]
+
+
+def _live_metric_lines(movement, framing, lighting):
+    """Format the real-time numerical diagnostics shown in the video overlay."""
+    metric_text = "--" if movement.movement_metric is None else f"{movement.movement_metric:.4f}"
+    return [
+        (f"Movimento (medida): {metric_text}", COLORS["info"]),
+        f"Threshold: {movement.movement_threshold:.4f}",
+        f"Face: largura {_format_ratio(framing.face_width_ratio)} | altura {_format_ratio(framing.face_height_ratio)}",
+        f"Centro: X {_format_ratio(framing.face_center_x)} | Y {_format_ratio(framing.face_center_y)}",
+        f"Luz: media {_format_metric(lighting.mean_luminance)} | escura {_format_ratio(lighting.dark_pixel_ratio)}",
+        f"BRIGHT PIXEL RATIO (>= {LIGHTING_BRIGHT_PIXEL_CHANNEL:.3f}): {_format_ratio(lighting.bright_pixel_ratio)}",
+        f"Luz: uniformidade {_format_metric(lighting.illumination_uniformity)}",
+    ]
 
 
 def capture_video(camera_index=0, duration_s=30.0, output_dir=None):
@@ -112,47 +215,29 @@ def capture_video(camera_index=0, duration_s=30.0, output_dir=None):
             movement = movement_checker.update(landmarks)
             framing = framing_checker.evaluate(landmarks, frame.shape)
             lighting = lighting_checker.evaluate(rgb_frame, framing.bbox)
+            roi_status = assess_live_roi_status(rgb_frame, landmarks)
 
-            metric_text = "--" if movement.movement_metric is None else f"{movement.movement_metric:.4f}"
-            lines = [
-                f"Movimento: {metric_text}",
-                f"Threshold: {movement.movement_threshold:.4f}",
-                f"Face width: {_format_ratio(framing.face_width_ratio)}",
-                f"Face height: {_format_ratio(framing.face_height_ratio)}",
-                f"Center X: {_format_ratio(framing.face_center_x)}",
-                f"Center Y: {_format_ratio(framing.face_center_y)}",
-                "Lighting",
-                f"Mean luminance: {_format_metric(lighting.mean_luminance)}",
-                f"Dark ratio: {_format_ratio(lighting.dark_pixel_ratio)}",
-                f"Bright ratio: {_format_ratio(lighting.bright_pixel_ratio)}",
-                f"Uniformity: {_format_metric(lighting.illumination_uniformity)}",
-            ]
-            color = (0, 255, 0)
+            metric_lines = _live_metric_lines(movement, framing, lighting)
+            lines = _quality_status_lines(movement, framing, lighting, roi_status)
             if state is CaptureState.PREVIEW:
                 lines = [
-                    "PREVIEW",
-                    "Posicione-se para a captura",
-                    "Pressione ENTER para iniciar",
-                    "Pressione Q para sair",
+                    ("PREVIEW - ajuste sua posicao", COLORS["info"]),
+                    ("ENTER = iniciar | Q = sair", COLORS["info"]),
                     *lines,
                 ]
-                color = (255, 255, 0)
             else:
-                movement_status = "OK" if movement.is_stable else "MOVIMENTO DETECTADO"
                 lines = [
-                    "CAPTURANDO",
-                    f"Movement: {movement_status}",
-                    f"Framing: {framing.message}",
+                    ("CAPTURANDO", COLORS["info"]),
                     *lines,
                 ]
-                if not framing.face_detected:
-                    lines.append("Posicione seu rosto na camera")
-                    color = (0, 0, 255)
-                elif not framing.framing_ok:
-                    color = (0, 165, 255)
-                elif not movement.is_stable:
-                    lines.append("Mantenha o rosto imovel")
-                    color = (0, 165, 255)
+            lines.extend(metric_lines)
+
+            if not framing.face_detected:
+                color = COLORS["error"]
+            elif not framing.framing_ok or not movement.is_stable:
+                color = COLORS["warning"]
+            else:
+                color = COLORS["ok"]
 
             capture_finished = False
             if state is CaptureState.CAPTURING:

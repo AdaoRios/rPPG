@@ -12,7 +12,7 @@ from scipy import signal
 from rPPG.preprocessing.detrend import detrend
 from rPPG.preprocessing.processing import _process_video
 
-def ica_algorithm(frames, FS):
+def ica_algorithm(frames, FS, return_metadata=False):
     LPF = 0.7
     HPF = 2.5
     RGB = _process_video(frames)
@@ -38,12 +38,20 @@ def ica_algorithm(frames, FS):
         Fx = np.arange(0, N / 2) / (N / 2) * NyquistF
         Px = Px / np.sum(Px, axis=0)
         MaxPx[0, c] = np.max(Px)
-    MaxComp = np.argmax(MaxPx)
+    # ICA necessarily selects one blind-source component.  This local choice is
+    # part of the ICA method itself, not a ROI/method selection for final
+    # fusion; the selected index and criterion are exposed to the audit trail.
+    MaxComp = int(np.argmax(MaxPx))
     BVP_I = S[MaxComp, :]
     B, A = signal.butter(3, [LPF / NyquistF, HPF / NyquistF], 'bandpass')
     BVP_F = signal.filtfilt(B, A, np.real(BVP_I).astype(np.double))
 
     BVP = BVP_F[0]
+    if return_metadata:
+        return BVP, {
+            "source_selection": "ICA component with highest normalized spectral power",
+            "selected_component": MaxComp,
+        }
     return BVP
 
 def ica(X, Nsources, Wprev=0):

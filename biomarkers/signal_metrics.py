@@ -3,6 +3,8 @@
 import numpy as np
 from scipy.fft import rfft, rfftfreq
 
+from rPPG.config import HR_HIGH_HZ, HR_LOW_HZ
+
 
 def compute_signal_metrics(filtered_signal, fps):
     """Calculate the unchanged temporal and spectral signal metrics."""
@@ -16,7 +18,7 @@ def compute_signal_metrics(filtered_signal, fps):
 
     frequencies = rfftfreq(len(signal), d=1.0 / fps)
     fft_magnitude = (2.0 / len(signal)) * np.abs(rfft(signal))
-    heart_band = (frequencies >= 0.7) & (frequencies <= 4.0)
+    heart_band = (frequencies >= HR_LOW_HZ) & (frequencies <= HR_HIGH_HZ)
     fft_band = fft_magnitude[heart_band]
     fft_peak = np.max(fft_band) if len(fft_band) else 0.0
 

@@ -24,17 +24,32 @@ def get_roi_mask(landmarks_px, roi_indices, frame_shape, erode_kernel_size=5):
     return mask
 
 
-def extract_roi_means(rgb_frame, landmarks_px, roi_points):
-    """Extract spatial RGB/BGR means for each ROI."""
+def extract_roi_means(rgb_frame, landmarks_px, roi_points, return_diagnostics=False):
+    """Extract per-ROI RGB means and optionally expose invalid ROI reasons.
+
+    All retained frame means must originate from the same video instant.  The
+    default preserves the historical all-ROI behaviour: if any configured ROI
+    cannot produce a sufficiently large mask, it returns ``None``.  Callers
+    that need audit data may opt into ``return_diagnostics`` and receive the
+    valid means plus a ``{roi_name: reason}`` mapping.
+    """
     frame_means = {}
-    
+    invalid_rois = {}
+
     for roi_name, indices in roi_points.items():
+        available_indices = [idx for idx in indices if idx < len(landmarks_px)]
         mask = get_roi_mask(landmarks_px, indices, rgb_frame.shape, erode_kernel_size=5)
-        
-        if mask is None or cv2.countNonZero(mask) < 50:
-            return None
-            
-        # Get mean RGB values inside the mask
-        frame_means[roi_name] = cv2.mean(rgb_frame, mask=mask)[:3]
-        
-    return frame_means
+        mask_pixels = 0 if mask is None else cv2.countNonZero(mask)
+
+        if len(available_indices) < 3:
+            invalid_rois[roi_name] = "insufficient_landmarks"
+        elif mask_pixels < 50:
+            invalid_rois[roi_name] = f"mask_too_small ({mask_pixels} pixels)"
+        else:
+            # RGB frame input makes this an RGB mean, despite OpenCV's BGR
+            # convention in other contexts.
+            frame_means[roi_name] = cv2.mean(rgb_frame, mask=mask)[:3]
+
+    if return_diagnostics:
+        return frame_means, invalid_rois
+    return None if invalid_rois else frame_means

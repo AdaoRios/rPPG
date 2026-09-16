@@ -4,8 +4,8 @@ import unittest
 
 import numpy as np
 
-from capture.lighting_quality import LightingQualityChecker
-from config import (
+from rPPG.capture.lighting_quality import LightingQualityChecker
+from rPPG.config import (
     LIGHTING_BRIGHT_PIXEL_CHANNEL,
     LIGHTING_DARK_PIXEL_LUMINANCE,
     LIGHTING_LUMA_WEIGHTS,
