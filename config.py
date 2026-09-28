@@ -36,27 +36,40 @@ LIGHTING_BRIGHT_PIXEL_CHANNEL = 0.784
 LIGHTING_UNIFORMITY_GRID_ROWS = 2
 LIGHTING_UNIFORMITY_GRID_COLUMNS = 2
 
-# Final HR, HRV, and signal-metrics cardiac band. These values match the
-# pre-existing implementation (0.7-4.0 Hz, or 42-240 bpm), now centralized so
-# filtering and spectral analysis cannot silently use different ranges.
-HR_LOW_HZ = 0.7    # 42 bpm
-HR_HIGH_HZ = 4.0   # 240 bpm
+# =============================================================================
+# FROZEN SCIENTIFIC PARAMETERS (final freeze)
+# -----------------------------------------------------------------------------
+# The scientific part of this project is closed. Do NOT change the cardiac
+# band, the method weights, the ROI weights, the final filter, the FFT
+# (Hann, no zero-padding, no interpolation), the spectral selection, the
+# harmonic policy, confidence, or ambiguity. Any future change requires a new
+# explicit validation campaign, not an in-place edit.
+# =============================================================================
 
+# Final HR, HRV, and signal-metrics cardiac band (0.7-4.0 Hz, or 42-240 bpm).
+HR_LOW_HZ = 0.7    # 42 bpm  (FROZEN)
+HR_HIGH_HZ = 4.0   # 240 bpm (FROZEN)
+
+# Method fusion weights (FROZEN), verified in the final LOOCV study.
 METHOD_WEIGHTS = {
-    "chrom": 0.3,
-    "pos": 0.3,
-    "ica": 0.3,
-    "green": 0.1
+    "chrom": 0.3,   # FROZEN
+    "pos": 0.4,     # FROZEN
+    "ica": 0.2,     # FROZEN
+    "green": 0.1,   # FROZEN
 }
 
+# ROI fusion weights (FROZEN as configuration D2). Frozen after the final
+# A-vs-D2 verification on the 25 exported captures: MAE 16.4341 vs 18.1498 bpm
+# (A), RMSE 20.1205 vs 20.8946, median 13.75 vs 14.89, ambiguous 3 vs 7,
+# bias +6.93 vs +8.19, max error 42.15 vs 39.75 (within the pre-declared
+# 3.0 bpm non-relevance margin), confidence distribution unchanged.
+# Evidence: C:\rPPG\data\weight_calibration_intermediates\final_d2_check.json
+# All configured ROI weights sum exactly to one.
 ROI_WEIGHTS = {
-    # Legacy relative weights (4:3:3) are preserved.  The experimental
-    # glabella contribution receives 10%, so legacy contributions are scaled
-    # by 0.90 and all configured ROI weights still sum exactly to one.
-    "testa": 0.36,
-    "bochecha_esquerda": 0.27,
-    "bochecha_direita": 0.27,
-    "glabela": 0.10,
+    "testa": 0.40,               # FROZEN (D2)
+    "bochecha_esquerda": 0.20,   # FROZEN (D2)
+    "bochecha_direita": 0.30,    # FROZEN (D2)
+    "glabela": 0.10,             # FROZEN (D2)
 }
 
 ROI_POINTS = {

@@ -8,8 +8,12 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from rPPG.calibration.metrics import absolute_error, aggregate_benchmarks, relative_error_percent
-from rPPG.calibration.runner import record_from_result, run_calibration
+try:
+    from rPPG.research.calibration.metrics import absolute_error, aggregate_benchmarks, relative_error_percent
+    from rPPG.research.calibration.runner import record_from_result, run_calibration
+except ImportError:
+    from rPPG.calibration.metrics import absolute_error, aggregate_benchmarks, relative_error_percent
+    from rPPG.calibration.runner import record_from_result, run_calibration
 from rPPG.config import METHOD_WEIGHTS, ROI_WEIGHTS
 
 
@@ -53,6 +57,11 @@ class CalibrationTests(unittest.TestCase):
         self.assertIsNone(record_from_result("capture_001", 20, fake_result(), "invalid")["reference_hr_bpm"])
 
     def test_production_weights_are_not_changed(self):
-        self.assertEqual(METHOD_WEIGHTS, {"chrom": .3, "pos": .3, "ica": .3, "green": .1})
-        self.assertEqual(ROI_WEIGHTS, {"testa": .36, "bochecha_esquerda": .27,
-                                       "bochecha_direita": .27, "glabela": .10})
+        # Guard test: pins the FROZEN production weights defined in config.py.
+        # Method weights are frozen (chrom 0.30 / pos 0.40 / ica 0.20 / green
+        # 0.10) and ROI weights are frozen as configuration D2 after the final
+        # A-vs-D2 verification on the 25 exported captures
+        # (see config.py and final_d2_check.json).
+        self.assertEqual(METHOD_WEIGHTS, {"chrom": .3, "pos": .4, "ica": .2, "green": .1})
+        self.assertEqual(ROI_WEIGHTS, {"testa": .40, "bochecha_esquerda": .20,
+                                       "bochecha_direita": .30, "glabela": .10})

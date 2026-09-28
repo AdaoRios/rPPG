@@ -49,13 +49,18 @@ nem algoritmo para a fusão final. Índice e critério agora entram no audit.
 
 | Escopo | Componentes e pesos |
 | --- | --- |
-| Algoritmos | CHROM 0,30; POS 0,30; GREEN 0,10; ICA 0,30 |
-| ROIs | TESTA 0,36; BOCHECHA_ESQUERDA 0,27; BOCHECHA_DIREITA 0,27; GLABELA 0,10 |
+| Algoritmos | CHROM 0,30; POS 0,30; GREEN 0,10; ICA 0,30 (FROZEN, LOOCV final) |
+| ROIs | TESTA 0,40; BOCHECHA_ESQUERDA 0,20; BOCHECHA_DIREITA 0,30; GLABELA 0,10 (FROZEN, configuração D2) |
 
-Ambos somam 1. A glabela recebe 10% experimental; os pesos legados preservam a
-proporção 4:3:3, escalada para 90%. O combinador valida pesos finitos e não
-negativos e calcula explicitamente `peso / soma_dos_pesos` antes de executar
-`sum(peso * sinal)`.
+Ambos somam 1. Os pesos de algoritmos foram congelados após o estudo LOOCV
+final. Os pesos de ROIs foram congelados como configuração D2 após a verificação
+final A-vs-D2 em 25 capturas exportadas (MAE 16,4341 vs 18,1498 bpm; RMSE
+20,1205 vs 20,8946; mediana 13,75 vs 14,89; ambíguos 3 vs 7), dentro da margem
+pré-declarada de 3,0 bpm; evidência em
+`C:\rPPG\data\weight_calibration_intermediates\final_d2_check.json`. Qualquer
+mudança futura exige nova campanha de validação, não edição no lugar. O
+combinador valida pesos finitos e não negativos e calcula explicitamente
+`peso / soma_dos_pesos` antes de executar `sum(peso * sinal)`.
 
 Componentes inválidos são registrados com a exceção no audit e os pesos dos
 componentes restantes são renormalizados. Sinais de comprimentos diferentes são
@@ -94,18 +99,28 @@ Relatório final: fusão dos algoritmos por ROI e das ROIs, seguida por filtro
 Butterworth único de 0,7--4,0 Hz (42--240 bpm). Os benchmarks comparam
 componentes; não são o sinal de produção.
 
-HR seleciona o maior pico FFT na banda e converte Hz em bpm. HRV usa picos do
-mesmo sinal final filtrado, IBIs de 250--1500 ms, SDNN, RMSSD e pNN50. Janelas
-menores que 60 s são sinalizadas como exploratórias; uma janela de cerca de 6 s
-não é suficiente para interpretação clínica de HRV.
+HR começa pelo maior candidato espectral independente na banda e converte Hz em
+bpm. Quando há relação aproximadamente 2:1 com o candidato dominante na
+frequência superior, a evidência de fundamental é registrada, mas a frequência
+dominante não é substituída automaticamente: a situação é marcada como
+ambígua e recebe baixa confiança. Isso evita tanto um viés artificial para
+frequências menores quanto uma falsa certeza. HRV usa picos do mesmo sinal final
+filtrado, IBIs de 250--1500 ms, SDNN, RMSSD e pNN50. Janelas menores que 60 s
+são sinalizadas como exploratórias e não sustentam interpretação clínica.
+
+O contrato mínimo para uma integração de API é `heart_rate`, `confidence`,
+`ambiguous`, `harmonic_detected`, `harmonic_supported` e `decision_reason`,
+acompanhados de SNR, concentração espectral e as quatro métricas observacionais
+de iluminação.
 
 ## Validação executada
 
 ```text
-python -m unittest rPPG.test_lighting_quality rPPG.test_quality_check rPPG.test_signal_pipeline rPPG.test_heart_rate rPPG.test_live_capture_quality
+python -m unittest discover -s rPPG -p "test_*.py"
 ```
 
-O comando passou 50 testes comportamentais: fórmula de fusão, normalização,
+A suíte completa passou 68 testes (`OK`): calibração (incluindo o teste guarda
+que fixa os pesos de produção congelados), fórmula de fusão, normalização,
 pesos inválidos, comprimentos incompatíveis, propagação de todas as ROIs e
 algoritmos, exclusão auditada de ICA, GLABELA, limiar de iluminação, resolução
 FFT, conversão Hz--bpm, limites da banda, sinais curtos e feedback do preview.
@@ -206,9 +221,8 @@ capture writer records.
 - An approximately 9-second capture has about 6.6--6.8 bpm FFT-bin resolution,
   depending on effective aligned samples; it is not a fine-resolution HR
   estimate.
-- Harmonic and spurious-peak differentiation is diagnostic-only. It needs
-  multi-capture validation and reference data before changing production peak
-  selection.
+- Harmonic relationships are diagnostic and can lower confidence; a supported
+  2:1 relationship does not force selection of the lower frequency.
 - External reference integration is optional and not simultaneous by design;
   it is only a validation label.
 - HRV remains exploratory for short windows.

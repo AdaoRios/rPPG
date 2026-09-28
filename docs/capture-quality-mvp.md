@@ -224,7 +224,7 @@ uma região de luma constante gera 1.
 |---|---:|---|
 | `LIGHTING_LUMA_WEIGHTS` | `(0.2126, 0.7152, 0.0722)` | Pesos Rec. 709 de `Y'`. |
 | `LIGHTING_DARK_PIXEL_LUMINANCE` | `0.10` | Classificação de pixel escuro para métrica. |
-| `LIGHTING_BRIGHT_PIXEL_CHANNEL` | `0.95` | Classificação de canal muito claro para métrica. |
+| `LIGHTING_BRIGHT_PIXEL_CHANNEL` | `0.784` | Classificação de canal muito claro para métrica. |
 | `LIGHTING_UNIFORMITY_GRID_ROWS/COLUMNS` | `2` / `2` | Resolução espacial da métrica de uniformidade. |
 
 Os dois valores de classificação de pixel **não são thresholds finais de

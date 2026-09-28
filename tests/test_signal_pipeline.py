@@ -137,27 +137,35 @@ class FusionTraceTests(unittest.TestCase):
         ]
         self.assertEqual(len(excluded), len(ROI_POINTS))
         self.assertTrue(all("ICA fixture failure" in item["reason"] for item in excluded))
+        # Effective weights renormalize the frozen configured weights (0.30,
+        # 0.40, 0.10 for the three surviving methods) in the same 3:4:1 ratio.
         methods = fusion.audit["roi_records"]["testa"]["methods"]
-        self.assertAlmostEqual(methods["chrom"]["effective_weight"], 3 / 7)
-        self.assertAlmostEqual(methods["pos"]["effective_weight"], 3 / 7)
-        self.assertAlmostEqual(methods["green"]["effective_weight"], 1 / 7)
+        self.assertAlmostEqual(methods["chrom"]["effective_weight"], 0.375)
+        self.assertAlmostEqual(methods["pos"]["effective_weight"], 0.5)
+        self.assertAlmostEqual(methods["green"]["effective_weight"], 0.125)
 
 
 class GlabelaAndLightingTests(unittest.TestCase):
     def test_configured_fusion_weights_are_preserved(self):
+        # Guards the FROZEN production weights. Method weights are unchanged;
+        # ROI weights are frozen as configuration D2 after the final A-vs-D2
+        # verification (evidence: C:\rPPG\data\weight_calibration_intermediates
+        # \final_d2_check.json). Do not edit these values without a new
+        # explicit validation campaign.
         self.assertEqual(
             METHOD_WEIGHTS,
-            {"chrom": 0.30, "pos": 0.30, "ica": 0.30, "green": 0.10},
+            {"chrom": 0.30, "pos": 0.40, "ica": 0.20, "green": 0.10},
         )
         self.assertEqual(
             ROI_WEIGHTS,
             {
-                "testa": 0.36,
-                "bochecha_esquerda": 0.27,
-                "bochecha_direita": 0.27,
+                "testa": 0.40,
+                "bochecha_esquerda": 0.20,
+                "bochecha_direita": 0.30,
                 "glabela": 0.10,
             },
         )
+        self.assertAlmostEqual(sum(ROI_WEIGHTS.values()), 1.0)
 
     def test_glabela_is_a_weighted_configured_roi(self):
         self.assertIn("glabela", ROI_POINTS)

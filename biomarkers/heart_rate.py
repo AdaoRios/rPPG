@@ -181,10 +181,20 @@ def _select_candidate(candidates, relationships):
     ambiguous = False
     reason = "largest independent candidate retained"
     harmonic_support = []
+    harmonic_detected = False
+    harmonic_supported = False
 
     for relationship in relationships:
-        if (not relationship["harmonic_relationship"]
-                or relationship["upper_candidate_id"] != original["id"]):
+        if not relationship["harmonic_relationship"]:
+            continue
+        original_is_upper = relationship["upper_candidate_id"] == original["id"]
+        original_is_lower = relationship["lower_candidate_id"] == original["id"]
+        if not (original_is_upper or original_is_lower):
+            continue
+        harmonic_detected = True
+        harmonic_supported = harmonic_supported or relationship["strength"] == "supported"
+        if original_is_lower:
+            harmonic_support.append(relationship)
             continue
         lower = next(
             candidate for candidate in candidates
@@ -198,9 +208,14 @@ def _select_candidate(candidates, relationships):
             magnitude_ratio >= _HARMONIC_RECONSIDERATION_MAGNITUDE_RATIO
             and prominence_ratio >= _HARMONIC_RECONSIDERATION_PROMINENCE_RATIO
         ):
-            selected = lower
-            reconsidered = True
-            reason = "dominant candidate has a supported approximately 2:1 harmonic"
+            # A lower-frequency candidate with enough support proves that a
+            # harmonic interpretation is plausible, but not which frequency
+            # is physiological. Retain the dominant peak and expose uncertainty.
+            ambiguous = True
+            reason = (
+                "dominant candidate has a supported approximately 2:1 harmonic; "
+                "fundamental interpretation is ambiguous"
+            )
             harmonic_support.append(relationship)
         elif (
             magnitude_ratio >= _HARMONIC_AMBIGUITY_MAGNITUDE_RATIO
@@ -215,6 +230,8 @@ def _select_candidate(candidates, relationships):
         "selected_candidate_id": selected["id"],
         "harmonic_reconsideration": reconsidered,
         "ambiguous": ambiguous,
+        "harmonic_detected": harmonic_detected,
+        "harmonic_supported": harmonic_supported,
         "reason": reason,
         "harmonic_support": harmonic_support,
     }
@@ -299,8 +316,14 @@ def analyze_hr_fft(filtered_signal, fps):
         "cardiac_band_power_ratio": (
             cardiac_band_power / total_spectral_power if total_spectral_power > 0 else 0.0
         ),
-        "harmonic_assessment": "supported harmonic reconsideration" if decision["harmonic_reconsideration"] else (
-            "ambiguous harmonic relationship" if decision["ambiguous"] else "no decisive harmonic reconsideration"
+        "harmonic_assessment": (
+            "ambiguous supported harmonic relationship"
+            if decision["ambiguous"] and decision["harmonic_supported"]
+            else "ambiguous harmonic relationship"
+            if decision["ambiguous"]
+            else "harmonic relationship detected"
+            if decision["harmonic_detected"]
+            else "no decisive harmonic relationship"
         ),
         "candidate_detection": {
             "resolution_hz": resolution_hz,
@@ -317,3 +340,21 @@ def analyze_hr_fft(filtered_signal, fps):
 def compute_hr_fft(filtered_signal, fps):
     """Estimate HR from the documented maximum FFT peak in the cardiac band."""
     return analyze_hr_fft(filtered_signal, fps)["selected_peak"]["hr_bpm"]
+
+
+def classify_confidence(decision, signal_metrics):
+    """Classify result confidence from explicit spectral and quality evidence."""
+    snr = signal_metrics.get("snr")
+    concentration = signal_metrics.get("spectral_concentration")
+    if (
+        decision["ambiguous"]
+        or snr is None
+        or concentration is None
+        or not np.isfinite(snr)
+        or not np.isfinite(concentration)
+        or snr <= 0.0
+    ):
+        return "low"
+    if concentration >= 0.5:
+        return "high"
+    return "medium"

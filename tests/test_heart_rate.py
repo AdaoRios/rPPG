@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 
-from rPPG.biomarkers.heart_rate import analyze_hr_fft, compute_hr_fft
+from rPPG.biomarkers.heart_rate import analyze_hr_fft, classify_confidence, compute_hr_fft
 from rPPG.config import HR_HIGH_HZ, HR_LOW_HZ
 
 
@@ -56,13 +56,15 @@ class HeartRateFFTTests(unittest.TestCase):
         self.assertEqual(len(diagnostics["candidate_detection"]["candidates"]), 2)
         self.assertTrue(diagnostics["relationships"][0]["harmonic_relationship"])
 
-    def test_supported_dominant_harmonic_reconsiders_fundamental(self):
+    def test_supported_dominant_harmonic_is_ambiguous(self):
         signal = _sine(1.5, 20.0) + _sine(3.0, 20.0, amplitude=2.0)
         diagnostics = analyze_hr_fft(signal, 30.0)
-        self.assertAlmostEqual(diagnostics["selected_peak"]["hr_bpm"], 90.0)
-        self.assertTrue(diagnostics["decision"]["harmonic_reconsideration"])
-        self.assertNotEqual(diagnostics["decision"]["selected_candidate_id"],
-                            diagnostics["decision"]["original_maximum_candidate_id"])
+        self.assertAlmostEqual(diagnostics["selected_peak"]["hr_bpm"], 180.0)
+        self.assertTrue(diagnostics["decision"]["harmonic_detected"])
+        self.assertTrue(diagnostics["decision"]["harmonic_supported"])
+        self.assertTrue(diagnostics["decision"]["ambiguous"])
+        self.assertEqual(diagnostics["decision"]["selected_candidate_id"],
+                         diagnostics["decision"]["original_maximum_candidate_id"])
 
     def test_weak_fundamental_does_not_force_harmonic_reinterpretation(self):
         signal = _sine(1.5, 20.0, amplitude=0.1) + _sine(3.0, 20.0, amplitude=2.0)
@@ -82,6 +84,37 @@ class HeartRateFFTTests(unittest.TestCase):
         diagnostics = analyze_hr_fft(signal, 30.0)
         self.assertAlmostEqual(diagnostics["selected_peak"]["hr_bpm"], 138.0)
         self.assertFalse(diagnostics["decision"]["harmonic_reconsideration"])
+
+    def test_two_independent_peaks_are_not_harmonic(self):
+        diagnostics = analyze_hr_fft(
+            _sine(1.0, 20.0) + _sine(1.5, 20.0, amplitude=0.9), 30.0
+        )
+        self.assertTrue(all(not item["harmonic_relationship"]
+                            for item in diagnostics["relationships"]))
+        self.assertFalse(diagnostics["decision"]["harmonic_detected"])
+
+    def test_confidence_is_low_for_ambiguity_or_weak_quality(self):
+        decision = {"ambiguous": True}
+        self.assertEqual(
+            classify_confidence(decision, {"snr": 20.0, "spectral_concentration": 0.9}),
+            "low",
+        )
+        decision["ambiguous"] = False
+        self.assertEqual(
+            classify_confidence(decision, {"snr": -1.0, "spectral_concentration": 0.4}),
+            "low",
+        )
+
+    def test_confidence_has_medium_and_high_quality_bands(self):
+        decision = {"ambiguous": False}
+        self.assertEqual(
+            classify_confidence(decision, {"snr": 1.0, "spectral_concentration": 0.4}),
+            "medium",
+        )
+        self.assertEqual(
+            classify_confidence(decision, {"snr": 1.0, "spectral_concentration": 0.5}),
+            "high",
+        )
 
     def test_unresolved_close_peaks_are_one_candidate(self):
         signal = _sine(1.5, 20.0) + _sine(1.6, 20.0, amplitude=0.8)

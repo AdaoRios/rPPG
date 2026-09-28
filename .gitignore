@@ -1,33 +1,57 @@
-# Python
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
+.pytest_cache/
 
-# Virtual environments
+# Ambientes virtuais
 .venv/
 venv/
 env/
+ENV/
 
-# VS Code
+# IDEs e editores
 .vscode/
 .idea/
+*.swp
+*.swo
 
-# Dados
-data/benchmark/
-data/captures/
-data/results/
-/calibration/data/
-/calibration/spectra/
-/calibration/results.csv
-/calibration/summary.csv
-/calibration/report.html
-/calibration/*.png
+# Dados brutos, capturas e vídeos (mantendo apenas .gitkeep)
+data/benchmark/*
+!data/benchmark/.gitkeep
+data/captures/*
+!data/captures/.gitkeep
+data/results/*
+!data/results/.gitkeep
+*.mp4
+*.avi
+*.mov
+*.zip
 
-# Logs
+# Saídas e artefatos de pesquisa e calibração
+research/calibration/data/
+research/calibration/spectra/
+research/calibration/*.csv
+research/calibration/*.html
+research/calibration/*.png
+research/weight_calibration/outputs/
+research/weight_calibration/data/
+calibration/data/
+calibration/spectra/
+calibration/*.csv
+calibration/*.html
+calibration/*.png
+
+# Logs e relatórios temporários
 *.log
+.coverage
+htmlcov/
 
 # Variáveis de ambiente
 .env
 
-# Sistema
+# Sistema operacional
 .DS_Store
 Thumbs.db
+desktop.ini

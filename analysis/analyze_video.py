@@ -7,7 +7,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from rPPG.biomarkers.heart_rate import analyze_hr_fft
+from rPPG.biomarkers.heart_rate import analyze_hr_fft, classify_confidence
 from rPPG.biomarkers.hrv import compute_hrv
 from rPPG.biomarkers.signal_metrics import compute_signal_metrics
 from rPPG.capture.lighting_quality import LightingQualityChecker
@@ -88,8 +88,14 @@ def _reference_validation(estimated_hr, reference_hr):
     }
 
 
-def analyze_video(video_path, reference_hr=None):
+def analyze_video(video_path, reference_hr=None, verbose=True):
     """Analyze an MP4/video file and return a traceable ``AnalysisResult``.
+
+    This is the production core entry point: ``result = analyze_video(video)``.
+    It has no ``input()``, menu, GUI, or calibration dependency, and it never
+    needs printing to work. ``verbose`` only toggles the console audits for
+    CLI use; programmatic callers (e.g. a future API) pass ``verbose=False``
+    and read the same values from the returned ``AnalysisResult``/``audit``.
 
     A retained sample always contains every configured ROI from the same video
     frame. Lighting is measured with the experimental 0.784 channel threshold
@@ -190,6 +196,7 @@ def analyze_video(video_path, reference_hr=None):
         debug=DEBUG_COMPARE_ALGORITHMS,
         return_audit=True,
         reference_hr=reference_hr,
+        verbose=verbose,
     )
 
     # This is the sole final filter. The same exact signal reaches HR, HRV,
@@ -200,12 +207,21 @@ def analyze_video(video_path, reference_hr=None):
     hr_fft = analyze_hr_fft(filtered_signal, fps)
     heart_rate = hr_fft["selected_peak"]["hr_bpm"]
     reference_validation = _reference_validation(heart_rate, reference_hr)
+    signal_metrics = compute_signal_metrics(filtered_signal, fps)
+    decision = hr_fft["decision"]
+    confidence = classify_confidence(decision, signal_metrics)
+    hr_fft["ambiguous"] = bool(decision["ambiguous"])
+    hr_fft["harmonic_detected"] = bool(decision["harmonic_detected"])
+    hr_fft["harmonic_supported"] = bool(decision["harmonic_supported"])
+    hr_fft["decision_reason"] = decision["reason"]
+    hr_fft["confidence"] = confidence
     observations = frame_audit["lighting"].pop("observations")
     for metric in ("bright_pixel_ratio", "mean_luminance", "dark_pixel_ratio", "illumination_uniformity"):
         values = [item[metric] for item in observations if item[metric] is not None]
         frame_audit["lighting"][metric] = float(np.mean(values)) if values else None
     frame_audit["valid_frame_rate"] = valid_frames / frame_audit["frames_read"]
-    _print_frame_collection_audit(frame_audit)
+    if verbose:
+        _print_frame_collection_audit(frame_audit)
     audit = {
         "video_path": str(video_path),
         "fps": float(fps),
@@ -224,11 +240,13 @@ def analyze_video(video_path, reference_hr=None):
         heart_rate=heart_rate,
         hrv=compute_hrv(filtered_signal, fps),
         respiratory_rate=None,
-        signal_metrics=compute_signal_metrics(filtered_signal, fps),
         fps=fps,
         duration=valid_frames / fps,
         valid_frames=valid_frames,
         audit=audit,
+        confidence=confidence,
+        ambiguous=bool(decision["ambiguous"]),
+        signal_metrics=signal_metrics,
         spectral_data={
             "frequency_hz": np.fft.rfftfreq(len(filtered_signal), d=1.0 / fps),
             "magnitude": np.abs(np.fft.rfft(filtered_signal * np.hanning(len(filtered_signal)))),

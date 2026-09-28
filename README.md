@@ -119,7 +119,7 @@ Vídeos capturados são salvos em `data/captures/`, com o nome `video_<data>_<ho
 O módulo independente reutiliza o pipeline normal e não altera algoritmos, ROIs ou pesos:
 
 ```bash
-python -m rPPG.calibration --captures 10 --duration 20 --output-dir calibration
+python -m rPPG.research.calibration --captures 10 --duration 20 --output-dir research/calibration
 ```
 
 Após cada captura, informe a FC exibida no Apple Watch, ou pressione ENTER para ausente. `reference_hr_bpm` é uma referência externa observacional, não ground truth clínico: nunca influencia resultado, algoritmo ou pesos. A saída contém JSON por captura, `results.csv`, `summary.csv`, espectros CSV e `report.html`; registra FC final, ROI × algoritmo, erros quando há referência, métricas de sinal/iluminação e audit. O limiar `0.784` é somente de pixel brilhante, não um quality gate.
@@ -139,10 +139,10 @@ HR_HIGH_HZ = 4.0   # 240 bpm — limite superior aceito para a FC
 
 METHOD_WEIGHTS = {"chrom": 0.3, "pos": 0.3, "ica": 0.3, "green": 0.1}
 
-ROI_WEIGHTS = {
-    "testa": 0.36,
-    "bochecha_esquerda": 0.27,
-    "bochecha_direita": 0.27,
+ROI_WEIGHTS = {                 # FROZEN — configuração D2 (ver abaixo)
+    "testa": 0.40,
+    "bochecha_esquerda": 0.20,
+    "bochecha_direita": 0.30,
     "glabela": 0.10,
 }
 
@@ -152,10 +152,10 @@ ROI_POINTS = { ... }  # índices dos landmarks do MediaPipe para cada ROI
 MOVEMENT_THRESHOLD = 0.010
 MOVEMENT_WINDOW_SIZE = 5
 READY_STABLE_FRAMES = 15
-FACE_MIN_WIDTH_RATIO = 0.25
-FACE_MAX_WIDTH_RATIO = 0.70
-FACE_MIN_HEIGHT_RATIO = 0.35
-FACE_MAX_HEIGHT_RATIO = 0.85
+FACE_MIN_WIDTH_RATIO = 0.28
+FACE_MAX_WIDTH_RATIO = 0.45
+FACE_MIN_HEIGHT_RATIO = 0.45
+FACE_MAX_HEIGHT_RATIO = 0.80
 FACE_MAX_CENTER_OFFSET_X = 0.15
 FACE_MAX_CENTER_OFFSET_Y = 0.18
 
@@ -173,11 +173,23 @@ limitam o desvio absoluto do centro da face em relação a 50% do frame, também
 normalizado por largura/altura. Todos os valores são iniciais e devem ser
 calibrados observando a webcam.
 
-Os pesos de algoritmos somam 1. Os pesos legados das três ROIs preservam a
-proporção 4:3:3, escalada para 90% do total; os 10% restantes são a contribuição
-experimental explícita da glabela. O combinador valida pesos finitos e não
-negativos e normaliza apenas os componentes explicitamente marcados como válidos.
-O detalhamento de rastreabilidade está em [docs/signal-pipeline.md](docs/signal-pipeline.md).
+Os pesos de algoritmos somam 1 e foram **congelados** após o estudo LOOCV final.
+Os pesos de ROIs somam 1 e foram **congelados como a configuração D2** após a
+verificação final A-vs-D2 em 25 capturas exportadas: MAE 16.4341 bpm (D2) vs
+18.1498 bpm (A), RMSE 20.1205 vs 20.8946, mediana 13.75 vs 14.89, 3 vs 7
+resultados ambíguos, enviesamento +6.93 vs +8.19 bpm — dentro da margem
+pré-declarada de não-relevância de 3.0 bpm para o erro máximo. Evidência:
+`C:\rPPG\data\weight_calibration_intermediates\final_d2_check.json`. Qualquer
+alteração futura desses pesos exige uma nova campanha de validação explícita,
+não uma edição no lugar. O combinador valida pesos finitos e não negativos e
+normaliza apenas os componentes explicitamente marcados como válidos. O
+detalhamento de rastreabilidade está em
+[docs/signal-pipeline.md](docs/signal-pipeline.md).
+
+O resultado de análise também expõe `confidence`, `ambiguous`,
+`harmonic_detected`, `harmonic_supported` e `decision_reason` no audit FFT e
+no objeto `AnalysisResult`. A referência externa, quando informada, é usada
+somente para validação e nunca para selecionar HR ou alterar pesos.
 
 ---
 
@@ -194,7 +206,8 @@ rPPG/
 │
 ├── capture/                       # pipeline de captura (independente da análise)
 │   ├── capture_video.py           #   orquestra preview, gravação e feedback
-│   └── quality_check.py           #   qualidade de movimento e enquadramento
+│   ├── quality_check.py           #   qualidade de movimento e enquadramento
+│   └── lighting_quality.py        #   avaliação de iluminação facial
 │
 ├── analysis/                      # pipeline de análise (independente da captura)
 │   └── analyze_video.py           #   lê um .mp4 e roda o pipeline completo de rPPG
@@ -204,27 +217,41 @@ rPPG/
 │   └── roi_extraction.py          #   máscara + média RGB de cada ROI
 │
 ├── preprocessing/
-│   ├── smoothing.py                #   suavização por média móvel
-│   └── filters.py                  #   filtro passa-banda Butterworth
+│   ├── processing.py              #   processamento auxiliar dos extratores
+│   ├── filters.py                 #   filtro passa-banda Butterworth
+│   └── detrend.py                 #   detrending para POS e ICA
 │
-├── extractors/                     # algoritmos de extração do sinal rPPG
-│   ├── chrom.py                    #   CHROM (De Haan & Jeanne, 2013)
-│   ├── pos.py                      #   POS (Wang et al., 2017)
-│   ├── green.py                    #   GREEN (Verkruysse et al., 2008)
-│   └── combine.py                  #   fusão ponderada entre algoritmos e ROIs
+├── extractors/                    # algoritmos de extração do sinal rPPG
+│   ├── chrom.py                   #   CHROM (De Haan & Jeanne, 2013)
+│   ├── pos.py                     #   POS (Wang et al., 2017)
+│   ├── green.py                   #   GREEN (Verkruysse et al., 2008)
+│   ├── ica.py                     #   ICA (Poh, McDuff & Picard, 2010)
+│   └── combine.py                 #   fusão ponderada entre algoritmos e ROIs
 │
 ├── biomarkers/
-│   ├── heart_rate.py               #   frequência cardíaca via pico da FFT
-│   ├── hrv.py                      #   SDNN, RMSSD, pNN50
-│   ├── signal_metrics.py           #   SNR, concentração espectral, amplitude, energia
-│   └── respiratory_rate.py         #   ainda não implementado
+│   ├── heart_rate.py              #   frequência cardíaca via pico da FFT
+│   ├── hrv.py                     #   SDNN, RMSSD, pNN50
+│   ├── signal_metrics.py          #   SNR, concentração espectral, amplitude, energia
+│   └── respiratory_rate.py        #   ainda não implementado
 │
 ├── reports/
-│   ├── report.py                   #   relatório final e benchmarks no console
-│   └── plots.py                    #   gráficos de diagnóstico (modo debug)
+│   ├── report.py                  #   relatório final e benchmarks no console
+│   └── plots.py                   #   gráficos de diagnóstico (modo debug)
 │
-└── utils/
-    └── models.py                   #   dataclass AnalysisResult
+├── utils/
+│   └── models.py                  #   dataclass AnalysisResult
+│
+├── tests/                         # suíte de testes unitários e de integração
+│   ├── test_calibration.py
+│   ├── test_heart_rate.py
+│   ├── test_lighting_quality.py
+│   ├── test_live_capture_quality.py
+│   ├── test_quality_check.py
+│   └── test_signal_pipeline.py
+│
+└── research/                      # ambiente de pesquisa, calibração e validação offline
+    ├── calibration/               #   calibração interativa de campo com Apple Watch
+    └── weight_calibration/        #   estudos LOOCV, exportação de sinais e validação D2
 ```
 
 ## Capture Quality: fluxo e teste manual
@@ -302,11 +329,20 @@ diagnóstico para CHROM, POS, GREEN e ICA.
 
 ### Testes
 
-Execute a partir do diretório pai de `rPPG/`:
+Execute a partir da raiz do projeto (`rPPG/`):
 
 ```bash
-python -m unittest rPPG.test_lighting_quality rPPG.test_quality_check rPPG.test_signal_pipeline rPPG.test_heart_rate rPPG.test_live_capture_quality
+python -m unittest discover -s tests -t . -p "test_*.py"
 ```
+
+Ou a partir do diretório pai:
+
+```bash
+python -m unittest discover -s rPPG/tests -p "test_*.py"
+```
+
+A suíte completa (calibração, HR, iluminação, captura ao vivo, qualidade e
+pipeline de sinal) tem 68 testes e deve passar integralmente (`OK`).
 
 
 ## Referências

@@ -10,11 +10,11 @@ from rPPG.analysis.analyze_video import analyze_video
 from rPPG.capture.capture_video import capture_video
 from rPPG.config import LIGHTING_BRIGHT_PIXEL_CHANNEL, ROI_POINTS
 from rPPG.extractors.combine import METHOD_ORDER
-from rPPG.calibration.metrics import (
+from .metrics import (
     absolute_error, aggregate_benchmarks, relative_error_percent, valid_reference,
 )
-from rPPG.calibration.report import write_report
-from rPPG.calibration.storage import calibration_paths, flatten_record, save_capture, save_spectrum, write_csv
+from .report import write_report
+from .storage import calibration_paths, flatten_record, save_capture, save_spectrum, write_csv
 
 
 def _ask_reference(input_fn=input):
@@ -73,6 +73,11 @@ def record_from_result(capture_id, requested_duration, result, reference_hr, tim
             "selected_frequency_hz": selected.get("frequency_hz"), "selected_bpm": selected.get("hr_bpm"),
             "second_peak_frequency_hz": second.get("frequency_hz"), "second_peak_bpm": second.get("frequency_hz") * 60 if second.get("frequency_hz") is not None else None,
             "peak_ratio": second.get("primary_to_second_ratio"),
+            "confidence": fft.get("confidence"),
+            "ambiguous": fft.get("ambiguous"),
+            "harmonic_detected": fft.get("harmonic_detected"),
+            "harmonic_supported": fft.get("harmonic_supported"),
+            "decision_reason": fft.get("decision_reason"),
         },
         "roi_algorithm_results": combinations,
         "audit": audit,

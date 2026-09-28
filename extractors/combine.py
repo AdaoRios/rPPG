@@ -15,8 +15,9 @@ from rPPG.extractors.green import green_algorithm
 from rPPG.extractors.ica import ica_algorithm
 from rPPG.extractors.pos import pos_algorithm
 from rPPG.preprocessing.filters import bandpass_filter, moving_average_smooth
-from rPPG.reports.plots import plot_algorithm_comparison
-from rPPG.reports.report import print_algorithm_benchmark, print_roi_benchmark
+# Presentation lives outside the core: plotting (matplotlib) and console
+# benchmark printing are imported lazily so the core never hard-depends on
+# rPPG.reports.plots and can run headless (e.g. future programmatic callers).
 
 
 METHOD_ORDER = ("chrom", "pos", "green", "ica")
@@ -186,14 +187,16 @@ def _print_signal_pipeline_audit(audit: dict) -> None:
 
 
 def combine_roi_and_methods(
-    roi_signals, fps, debug=False, return_audit=False, reference_hr=None
+    roi_signals, fps, debug=False, return_audit=False, reference_hr=None,
+    verbose=True,
 ):
     """Fuse algorithms per ROI, then valid ROIs by explicitly validated weight.
 
     The returned signal is intentionally *unfiltered*. ``analyze_video``
     applies the single final cardiac band-pass filter used consistently by HR,
     HRV, and final signal metrics. Benchmarks are observational and never
-    select the final method or ROI.
+    select the final method or ROI. ``verbose`` only controls console
+    presentation; it never changes the signal or the audit contents.
     """
     if fps <= 0 or not np.isfinite(fps):
         raise ValueError("fps must be a positive finite value")
@@ -332,6 +335,8 @@ def combine_roi_and_methods(
         )
 
         if debug and all(name in normalized_signals for name in METHOD_ORDER):
+            from rPPG.reports.plots import plot_algorithm_comparison
+
             plot_algorithm_comparison(
                 normalized_signals["chrom"], normalized_signals["pos"],
                 normalized_signals["green"], normalized_signals["ica"], combined, fps,
@@ -368,14 +373,20 @@ def combine_roi_and_methods(
         except ValueError as error:
             algorithm_benchmark[method_name.upper()] = {"benchmark_error": str(error)}
 
-    print_roi_benchmark(roi_benchmark, reference_hr=reference_hr)
-    print_algorithm_benchmark(
-        algorithm_benchmark.get("CHROM", {}),
-        algorithm_benchmark.get("POS", {}),
-        algorithm_benchmark.get("GREEN", {}),
-        algorithm_benchmark.get("ICA"),
-        reference_hr=reference_hr,
-    )
+    if verbose:
+        from rPPG.reports.report import (
+            print_algorithm_benchmark,
+            print_roi_benchmark,
+        )
+
+        print_roi_benchmark(roi_benchmark, reference_hr=reference_hr)
+        print_algorithm_benchmark(
+            algorithm_benchmark.get("CHROM", {}),
+            algorithm_benchmark.get("POS", {}),
+            algorithm_benchmark.get("GREEN", {}),
+            algorithm_benchmark.get("ICA"),
+            reference_hr=reference_hr,
+        )
 
     audit = {
         "configured_rois": configured_rois,
@@ -397,6 +408,7 @@ def combine_roi_and_methods(
             "filtering": "not filtered here; final filter is applied once by analyze_video",
         },
     }
-    _print_signal_pipeline_audit(audit)
+    if verbose:
+        _print_signal_pipeline_audit(audit)
     result = SignalFusionResult(signal=final_combined, audit=audit)
     return result if return_audit else result.signal

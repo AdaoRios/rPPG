@@ -77,6 +77,11 @@ def print_report(result):
         print(f"  Total spectral power           : {_format_value(hr_fft['total_spectral_power'])}")
         print(f"  Cardiac-band power ratio       : {_format_value(hr_fft['cardiac_band_power_ratio'])}")
         print(f"  Selection                      : {hr_fft['selection_method']}")
+        print(f"  Confidence                    : {hr_fft.get('confidence', 'N/A')}")
+        print(f"  Ambiguous                     : {hr_fft.get('ambiguous', 'N/A')}")
+        print(f"  Harmonic detected             : {hr_fft.get('harmonic_detected', 'N/A')}")
+        print(f"  Harmonic supported            : {hr_fft.get('harmonic_supported', 'N/A')}")
+        print(f"  Decision reason               : {hr_fft.get('decision_reason', 'N/A')}")
     reference = (result.audit or {}).get("reference_validation")
     if reference:
         print("\nExternal Reference Validation (does not alter production HR)")
